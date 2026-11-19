@@ -7,3 +7,6 @@
 
 [db]
 32.202.123.57
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
