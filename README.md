@@ -1,187 +1,203 @@
-# Ansible Modules: Basic Practice
+# Ansible Modules: Basic Practice (Amazon Linux lab)
 
-A beginner-friendly, hands-on lab for learning common Ansible modules. It includes ad-hoc commands, runnable playbooks, exercises, and expected outcomes.
+This repository documents and practices the Ansible setup used on the control node at `/etc/ansible`. The example inventory separates the two EC2 managed hosts into `web` and `db` groups.
 
-## Learning objectives
+## Lab layout
 
-By completing this practice, you will be able to:
-
-- Explain what Ansible modules do.
-- Test connectivity to managed hosts.
-- Manage files, packages, services, users, and groups.
-- Gather and display task results.
-- Write idempotent playbooks and check what would change.
-
-## Lab requirements
-
-- Ansible installed on a Linux, macOS, or WSL control node.
-- One Linux managed host reachable over SSH.
-- A working SSH key and permission to use `sudo` or `become` for privileged tasks.
-- Python available on the managed host (normally present on Linux hosts).
-
-> Use a disposable lab VM. The exercises create a user, install Nginx and curl, and create files on the managed host.
-
-## Project files
+Use this structure on the control node:
 
 ```text
-.
-├── inventory.ini
+/etc/ansible/
 ├── ansible.cfg
+├── aws/
+│   └── ansible.pem          # local private key; never commit or share
+├── inventory/
+│   └── hosts
 ├── playbooks/
-│   ├── 01-files.yml
-│   ├── 02-packages-services.yml
-│   ├── 03-users.yml
-│   └── 04-facts-and-results.yml
-└── README.md
+│   ├── docker.yml
+│   ├── httpd.yml
+│   ├── jenkins.yml
+│   ├── mysql.yml
+│   ├── ping.yml
+│   └── pkg.yml
+└── roles/
 ```
 
-## 1. Configure the inventory
+The private key is intentionally excluded from this repository. Put your own key at `/etc/ansible/aws/ansible.pem` on the control node and restrict its permissions:
 
-Edit `inventory.ini`. Replace the sample address, login name, and private key path with values for your VM.
+```bash
+sudo chmod 400 /etc/ansible/aws/ansible.pem
+sudo chown ec2-user:ec2-user /etc/ansible/aws/ansible.pem
+```
+
+Never paste a private key into GitHub, chat, or a README.
+
+## 1. Ansible configuration
+
+Save this as `/etc/ansible/ansible.cfg`:
 
 ```ini
+[defaults]
+inventory = ./inventory/hosts
+remote_user = ec2-user
+private_key_file = ./aws/ansible.pem
+host_key_checking = False
+retry_files_enabled = False
+
+[privilege_escalation]
+become = True
+become_method = sudo
+become_user = root
+become_ask_pass = False
+```
+
+Because these paths are relative, run Ansible commands from `/etc/ansible`. To ensure Ansible loads this config:
+
+```bash
+cd /etc/ansible
+ansible --version
+```
+
+The output should show `/etc/ansible/ansible.cfg` as the config file.
+
+## 2. Inventory
+
+Save as `/etc/ansible/inventory/hosts`:
+
+```ini
+[all]
+23.22.227.133
+32.202.123.57
+
 [web]
-web1 ansible_host=192.0.2.10 ansible_user=ec2-user ansible_ssh_private_key_file=~/.ssh/lab-key.pem
+23.22.227.133
 
-[web:vars]
-ansible_python_interpreter=auto_silent
+[db]
+32.202.123.57
 ```
 
-For Ubuntu, the SSH user is often `ubuntu`; for Amazon Linux, it is often `ec2-user`. Ensure the key file is readable only by its owner:
+These are the addresses provided for this lab. Update them if the EC2 public IPs change. Both instances must allow inbound SSH from the control node. The SSH login is `ec2-user`.
+
+## 3. Verify configuration and connectivity
+
+Run from `/etc/ansible`:
 
 ```bash
-chmod 400 ~/.ssh/lab-key.pem
-```
-
-This repository includes an `ansible.cfg` that points Ansible to this inventory.
-
-## 2. Check connectivity
-
-```bash
+ansible-inventory --graph
+ansible all --list-hosts
+ansible all -m ansible.builtin.ping
 ansible web -m ansible.builtin.ping
-ansible web -m ansible.builtin.setup -a 'filter=ansible_distribution*'
+ansible db -m ansible.builtin.ping
 ```
 
-The Ansible `ping` module checks that Ansible can connect and execute Python on the managed host. It is not an ICMP network ping.
+The Ansible `ping` module checks SSH connectivity and Python execution. It is not an ICMP ping. A successful result looks like:
 
-## 3. Try ad-hoc module commands
+```text
+23.22.227.133 | SUCCESS => {
+    "changed": false,
+    "ping": "pong"
+}
+```
 
-Run each from the repository root:
+If you see `UNREACHABLE`, check the instance IP, security group rules, SSH user, key path, key permissions, and network route.
+
+## 4. Basic modules with ad-hoc commands
 
 ```bash
-# Run a simple command
-ansible web -m ansible.builtin.command -a 'uptime'
+# Run a command on every host
+ansible all -m ansible.builtin.command -a 'uptime'
 
-# Inspect a path
-ansible web -m ansible.builtin.stat -a 'path=/etc/hosts'
+# Read OS facts
+ansible all -m ansible.builtin.setup -a 'filter=ansible_distribution*'
 
-# Create a directory
-ansible web -b -m ansible.builtin.file -a 'path=/tmp/ansible-practice state=directory mode=0755'
+# Check a file
+ansible all -m ansible.builtin.stat -a 'path=/etc/hosts'
+
+# Create a directory (become is enabled in ansible.cfg)
+ansible web -m ansible.builtin.file -a 'path=/tmp/ansible-practice state=directory mode=0755'
 
 # Write a file
-ansible web -b -m ansible.builtin.copy -a 'content="Created by Ansible\n" dest=/tmp/ansible-practice/hello.txt mode=0644'
+ansible web -m ansible.builtin.copy -a 'content="Created by Ansible
+" dest=/tmp/ansible-practice/hello.txt mode=0644'
 
-# Read the file
+# Display the file
 ansible web -m ansible.builtin.command -a 'cat /tmp/ansible-practice/hello.txt'
 ```
 
-Use `-b` (become) when the operation needs elevated privileges. Avoid using the `shell` module unless you need shell features such as pipes or redirection; prefer a purpose-built module or `command`.
+Prefer purpose-built modules such as `file`, `copy`, and `dnf` over `shell`. Use `command` for commands that do not require shell parsing; use `shell` only for shell features such as pipes and redirects.
 
-## 4. Run the playbooks
+## 5. Run the lab playbooks
 
-```bash
-ansible-playbook playbooks/01-files.yml
-ansible-playbook playbooks/02-packages-services.yml
-ansible-playbook playbooks/03-users.yml
-ansible-playbook playbooks/04-facts-and-results.yml
-```
-
-If your sudo setup requires a password, add `-K`:
+From `/etc/ansible`, run the playbooks in your `playbooks/` directory:
 
 ```bash
-ansible-playbook -K playbooks/02-packages-services.yml
+ansible-playbook playbooks/ping.yml
+ansible-playbook playbooks/pkg.yml
+ansible-playbook playbooks/httpd.yml
+ansible-playbook playbooks/docker.yml
+ansible-playbook playbooks/jenkins.yml
+ansible-playbook playbooks/mysql.yml
 ```
 
-### Playbook 1: files and permissions
-
-Creates a directory, writes a file, checks its metadata, and displays the result.
-
-### Playbook 2: packages and services
-
-Installs Nginx and curl using the package manager for the managed host, then enables and starts Nginx. It supports Debian-family and RHEL-family Linux distributions.
-
-### Playbook 3: users and groups
-
-Creates a `student` group and a `student` account. This is a lab account; choose a different name if it already exists.
-
-### Playbook 4: facts and results
-
-Shows gathered operating system facts, registers command output, and prints it with `debug`.
-
-## 5. Check idempotency
-
-Run a playbook once, then run it again:
+Use a targeted host group when the playbook is written for one group:
 
 ```bash
-ansible-playbook playbooks/01-files.yml
-ansible-playbook playbooks/01-files.yml
+ansible-playbook -i inventory/hosts playbooks/httpd.yml --limit web
+ansible-playbook -i inventory/hosts playbooks/mysql.yml --limit db
 ```
 
-On the second run, tasks should generally report `ok` instead of `changed` when the desired state is already present. This behavior is called **idempotency**.
+The playbook's `hosts:` value selects the group it targets. Review each playbook before running it, especially package installation and service tasks. Package names and repository setup can vary by Amazon Linux release; verify the operating system with `ansible all -m setup -a 'filter=ansible_distribution*'`.
 
-Preview changes without applying them:
+If sudo asks for a password, add `-K`:
 
 ```bash
-ansible-playbook --check --diff playbooks/01-files.yml
+ansible-playbook -K playbooks/pkg.yml
 ```
 
-Check mode is a simulation; not every module can fully predict changes.
+## 6. Module quick reference
 
-## 6. Practice exercises
-
-Try these without copying an existing task:
-
-1. Create `/tmp/lab` with mode `0750`.
-2. Copy a file named `notes.txt` into that directory.
-3. Install `git`.
-4. Create a user named `trainee` with a home directory.
-5. Use `stat` to verify the file and display whether it exists.
-6. Ensure the Nginx service is stopped, then change the playbook to start it again.
-7. Run the same playbook twice and explain the second run's output.
-
-## Modules covered
-
-| Module | Use |
+| Module | Example use |
 |---|---|
-| `ansible.builtin.ping` | Test Ansible connectivity |
+| `ansible.builtin.ping` | Validate Ansible connectivity |
 | `ansible.builtin.command` | Run a command without shell parsing |
-| `ansible.builtin.debug` | Display values and task results |
-| `ansible.builtin.stat` | Inspect file or directory metadata |
-| `ansible.builtin.file` | Manage files, directories, and permissions |
-| `ansible.builtin.copy` | Copy content or files to managed hosts |
-| `ansible.builtin.apt` | Manage packages on Debian-family systems |
-| `ansible.builtin.dnf` | Manage packages on RHEL-family systems |
-| `ansible.builtin.service` | Manage services |
-| `ansible.builtin.group` | Manage local groups |
-| `ansible.builtin.user` | Manage local user accounts |
-| `ansible.builtin.setup` | Gather system facts |
+| `ansible.builtin.setup` | Gather managed-host facts |
+| `ansible.builtin.debug` | Display a value or task result |
+| `ansible.builtin.stat` | Inspect file metadata |
+| `ansible.builtin.file` | Create files/directories and set permissions |
+| `ansible.builtin.copy` | Copy a file or inline content |
+| `ansible.builtin.dnf` | Install or remove packages on supported RHEL-family systems |
+| `ansible.builtin.service` | Start, stop, or enable services |
+| `ansible.builtin.user` | Create or manage a local user |
+| `ansible.builtin.group` | Create or manage a local group |
+
+## 7. Practice and idempotency
+
+Try these tasks in a disposable lab:
+
+1. Run the ping playbook against `all`, then separately against `web` and `db`.
+2. Use the `file` module to create `/tmp/lab` with mode `0750`.
+3. Use `copy` to place a message in `/tmp/lab/notes.txt`.
+4. Use `stat` and `debug` to report whether that file exists.
+5. Install `curl` with the correct package module for the host OS.
+6. Run the same playbook twice. Explain why the second run should report `ok` for tasks already in the desired state.
+
+Preview a playbook before applying changes:
+
+```bash
+ansible-playbook --check --diff playbooks/pkg.yml
+```
+
+Check mode simulates changes, and not every module can predict every outcome.
 
 ## Troubleshooting
 
-- **UNREACHABLE / Permission denied:** check the host address, SSH username, security group or firewall, and private key.
-- **Bad permissions on private key:** run `chmod 400 ~/.ssh/lab-key.pem`.
-- **Missing sudo privileges:** verify the remote account can run sudo; use `-K` if sudo prompts for a password.
-- **No package match:** confirm the managed host's distribution and use the matching package manager.
-- **Python interpreter error:** install Python on the managed host or set `ansible_python_interpreter` to its actual path.
+- **Ansible uses the wrong config:** run commands from `/etc/ansible`; check `ansible --version`.
+- **Permission denied for key:** run `chmod 400 /etc/ansible/aws/ansible.pem`.
+- **SSH timeout:** verify EC2 public IP, security group inbound SSH rules, subnet route, and control-node egress.
+- **Permission denied (publickey):** verify `remote_user = ec2-user` and that the private key matches the instance key pair.
+- **Python interpreter error:** install Python on the managed host or set `ansible_python_interpreter` in inventory to its actual path.
+- **Package not found:** confirm the managed host distribution/version and the package's repository availability.
 
-## Cleanup
+## Security note
 
-Remove the practice files and lab account if you no longer need them:
-
-```bash
-ansible web -b -m ansible.builtin.file -a 'path=/opt/ansible-modules-practice state=absent'
-ansible web -b -m ansible.builtin.user -a 'name=student state=absent remove=true'
-ansible web -b -m ansible.builtin.group -a 'name=student state=absent'
-```
-
-The package and service playbook installs Nginx and curl and enables Nginx. Remove packages or disable the service separately if you want to revert those changes.
+The sample inventory contains public IP addresses supplied for this lab. Replace them if they are no longer current. Keep private keys out of version control. If a key was ever committed or exposed, revoke/replace it through AWS and update the control node.
