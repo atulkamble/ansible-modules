@@ -1,34 +1,35 @@
 # Ansible Modules: Basic Practice on Amazon Linux 2023
 
-A small practice repository for learning Ansible's built-in modules against Amazon Linux 2023 EC2 instances. Examples use ad-hoc commands and one compact playbook; no application deployment playbooks are included.
+A focused practice repository for Ansible built-in modules on Amazon Linux 2023 EC2 hosts. It contains an inventory, Ansible configuration, and one short practice playbook. It does not include application setup or deployment playbooks.
 
-## Lab layout
+## Repository layout
 
-Run Ansible from the control node directory `/etc/ansible`:
+Use this repository as the contents of /etc/ansible on the control node:
 
-```text
+~~~text
 /etc/ansible/
 ├── ansible.cfg
 ├── aws/
-│   └── ansible.pem          # local key; keep out of Git
+│   └── ansible.pem          # local key; never commit
 ├── inventory/
 │   └── hosts
-└── ansible-modules/
-    ├── README.md
-    └── practice.yml
-```
+├── practice.yml
+└── README.md
+~~~
 
-Keep the private key on the control node only. Do not commit it to this repository.
+The private key is not included. Place your own key at /etc/ansible/aws/ansible.pem on the control node and restrict its permissions:
 
-```bash
+~~~bash
 chmod 400 /etc/ansible/aws/ansible.pem
-```
+~~~
+
+Never commit or share the private key.
 
 ## Configuration
 
-Use this `/etc/ansible/ansible.cfg`:
+The included ansible.cfg expects paths relative to the current working directory:
 
-```ini
+~~~ini
 [defaults]
 inventory = ./inventory/hosts
 remote_user = ec2-user
@@ -41,20 +42,22 @@ become = True
 become_method = sudo
 become_user = root
 become_ask_pass = False
-```
+~~~
 
-Ansible resolves these relative paths from the current working directory. Run commands from `/etc/ansible` and confirm the active config:
+Run commands from /etc/ansible so Ansible loads this configuration:
 
-```bash
+~~~bash
 cd /etc/ansible
 ansible --version
-```
+~~~
+
+Confirm the output shows /etc/ansible/ansible.cfg as the active configuration file.
 
 ## Inventory
 
-Example `/etc/ansible/inventory/hosts`:
+The included inventory/hosts defines two groups:
 
-```ini
+~~~ini
 [all]
 23.22.227.133
 32.202.123.57
@@ -67,31 +70,28 @@ Example `/etc/ansible/inventory/hosts`:
 
 [all:vars]
 ansible_python_interpreter=/usr/bin/python3
-```
+~~~
 
-Replace these example IP addresses with the current EC2 public IPs. Ensure SSH is permitted from the control node and the instances use the `ec2-user` account.
+Replace the example public IP addresses with the current EC2 addresses. Allow inbound SSH from the control node and use the ec2-user account. Amazon Linux 2023 uses DNF for package management.
 
-## Check the lab
+## Check connectivity and gather facts
 
-```bash
+Run from /etc/ansible:
+
+~~~bash
 ansible-inventory --graph
 ansible all --list-hosts
 ansible all -m ansible.builtin.ping
 ansible all -m ansible.builtin.setup -a 'filter=ansible_distribution*'
-```
+~~~
 
-The Ansible `ping` module validates SSH and Python execution; it is not an ICMP ping.
+The Ansible ping module checks SSH connectivity and Python execution. It is not an ICMP network ping.
 
-## Basic module practice
+## Practice modules with ad-hoc commands
 
-Run these commands from `/etc/ansible`:
-
-```bash
+~~~bash
 # Run a command without shell parsing
 ansible all -m ansible.builtin.command -a 'uptime'
-
-# Read the operating system facts
-ansible all -m ansible.builtin.setup -a 'filter=ansible_distribution*'
 
 # Inspect a file
 ansible all -m ansible.builtin.stat -a 'path=/etc/hosts'
@@ -100,71 +100,72 @@ ansible all -m ansible.builtin.stat -a 'path=/etc/hosts'
 ansible web -m ansible.builtin.file -a 'path=/tmp/ansible-practice state=directory mode=0750'
 
 # Create a file with inline content
-ansible web -m ansible.builtin.copy -a 'content=Ansible module practice dest=/tmp/ansible-practice/notes.txt mode=0640'
+ansible web -m ansible.builtin.copy -a 'content="Ansible module practice" dest=/tmp/ansible-practice/notes.txt mode=0640'
 
-# Check the file contents
+# Read the file
 ansible web -m ansible.builtin.command -a 'cat /tmp/ansible-practice/notes.txt'
 
-# Install curl using Amazon Linux 2023's DNF package manager
+# Install curl with the Amazon Linux 2023 package manager
 ansible web -m ansible.builtin.dnf -a 'name=curl state=present'
 
-# Check a service with the service_facts module
+# Gather service facts
 ansible web -m ansible.builtin.service_facts
-```
 
-The configuration enables privilege escalation, so package management tasks run with sudo. Avoid putting secrets in command arguments or playbook output.
+# Display a value
+ansible web -m ansible.builtin.debug -a 'msg="Basic module practice complete"'
+~~~
 
-## Run the practice playbook
+Privilege escalation is enabled in the config for package installation and other privileged operations. Prefer purpose-built modules such as file, copy, and dnf; use command for simple commands. Use shell only when shell features such as pipes or redirects are required.
 
-The `practice.yml` file demonstrates `file`, `copy`, `stat`, `command`, `register`, and `debug` modules on the web group:
+## Practice playbook
 
-```bash
-ansible-playbook ansible-modules/practice.yml
-```
+The root-level practice.yml demonstrates file, copy, stat, command, register, and debug on the web group:
 
-Run it a second time. Tasks that already match the desired state should report `ok`, not `changed`. This is Ansible's idempotent behavior.
+~~~bash
+ansible-playbook practice.yml
+~~~
 
-Preview the changes first:
+Run it twice. Tasks that already match the requested state should report ok on the second run. This is called idempotency.
 
-```bash
-ansible-playbook --check --diff ansible-modules/practice.yml
-```
+Preview possible changes:
 
-Check mode simulates changes; some modules cannot predict all results.
+~~~bash
+ansible-playbook --check --diff practice.yml
+~~~
 
-## Modules in this practice
+Check mode is a simulation and some modules cannot predict every result.
 
-| Module | What it practices |
+## Modules covered
+
+| Module | Practice |
 |---|---|
-| `ansible.builtin.ping` | Test Ansible connectivity |
-| `ansible.builtin.command` | Run a command without shell parsing |
-| `ansible.builtin.setup` | Gather system facts |
-| `ansible.builtin.file` | Create directories and set permissions |
-| `ansible.builtin.copy` | Create a file from inline content |
-| `ansible.builtin.stat` | Inspect file metadata and existence |
-| `ansible.builtin.dnf` | Manage packages on Amazon Linux 2023 |
-| `ansible.builtin.service_facts` | Gather installed service information |
-| `ansible.builtin.debug` | Display values and registered results |
-
-Use purpose-built modules such as `file`, `copy`, and `dnf` when available. Prefer `command` over `shell` unless shell parsing is needed.
+| ansible.builtin.ping | Test Ansible connectivity |
+| ansible.builtin.command | Run a command without shell parsing |
+| ansible.builtin.setup | Gather system facts |
+| ansible.builtin.file | Create directories and set permissions |
+| ansible.builtin.copy | Create a file from inline content |
+| ansible.builtin.stat | Inspect file metadata and existence |
+| ansible.builtin.dnf | Manage packages on Amazon Linux 2023 |
+| ansible.builtin.service_facts | Gather installed service information |
+| ansible.builtin.debug | Display values and registered results |
 
 ## Exercises
 
-1. Target only `db` with the ping and setup modules.
-2. Create `/tmp/lab` with mode `0750` on both hosts.
-3. Copy a file to `/tmp/lab/notes.txt`, then use `stat` to verify it exists.
-4. Install `git` with `ansible.builtin.dnf`.
-5. Register the result of `uptime` in a playbook and display its `stdout`.
-6. Run the same playbook twice and identify which tasks changed.
+1. Run ping and setup against only the db group.
+2. Create /tmp/lab with mode 0750 on both hosts.
+3. Copy a file to /tmp/lab/notes.txt and use stat to check that it exists.
+4. Install git with ansible.builtin.dnf.
+5. Add a task that registers uptime output and displays its stdout.
+6. Run your playbook twice and identify which tasks changed.
 
 ## Troubleshooting
 
-- **Wrong Ansible config:** run commands from `/etc/ansible`; check `ansible --version`.
-- **SSH permission denied:** verify the current EC2 IP, `ec2-user`, key pair, and key permissions.
-- **SSH timeout:** check inbound SSH rules and network routing.
-- **Python interpreter error:** confirm Python 3 is installed and set `ansible_python_interpreter=/usr/bin/python3`.
-- **Package unavailable:** verify the host is Amazon Linux 2023 and inspect enabled repositories with `dnf repolist`.
+- Wrong Ansible config: run commands from /etc/ansible and check ansible --version.
+- SSH permission denied: verify the EC2 IP, ec2-user, key pair, and key permissions.
+- SSH timeout: check inbound SSH rules and network routing.
+- Python interpreter error: verify Python 3 is installed and inventory points to /usr/bin/python3.
+- Package unavailable: confirm the host is Amazon Linux 2023 and inspect enabled repositories with dnf repolist.
 
 ## Security
 
-Never add `ansible.pem` to Git. Avoid using `host_key_checking = False` outside a temporary lab; production environments should verify SSH host keys. Restrict SSH access in the EC2 security group to trusted source addresses.
+Never commit ansible.pem. The lab config disables SSH host-key checking for convenience; enable host-key verification in production. Restrict SSH access in EC2 security groups to trusted source addresses.
