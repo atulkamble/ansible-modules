@@ -58,18 +58,11 @@ Confirm the output shows /etc/ansible/ansible.cfg as the active configuration fi
 The included inventory/hosts defines two groups:
 
 ~~~ini
-[all]
-23.22.227.133
-32.202.123.57
-
 [web]
 23.22.227.133
 
 [db]
 32.202.123.57
-
-[all:vars]
-ansible_python_interpreter=/usr/bin/python3
 ~~~
 
 Replace the example public IP addresses with the current EC2 addresses. Allow inbound SSH from the control node and use the ec2-user account. Amazon Linux 2023 uses DNF for package management.
@@ -91,28 +84,28 @@ The Ansible ping module checks SSH connectivity and Python execution. It is not 
 
 ~~~bash
 # Run a command without shell parsing
-ansible all -m ansible.builtin.command -a 'uptime'
+sudo ansible all -m ansible.builtin.command -a 'uptime'
 
 # Inspect a file
-ansible all -m ansible.builtin.stat -a 'path=/etc/hosts'
+sudo ansible all -m ansible.builtin.stat -a 'path=/etc/hosts'
 
 # Create a directory on the web host
-ansible web -m ansible.builtin.file -a 'path=/tmp/ansible-practice state=directory mode=0750'
+sudo ansible web -m ansible.builtin.file -a 'path=/tmp/ansible-practice state=directory mode=0750'
 
 # Create a file with inline content
-ansible web -m ansible.builtin.copy -a 'content="Ansible module practice" dest=/tmp/ansible-practice/notes.txt mode=0640'
+sudo ansible web -m ansible.builtin.copy -a 'content="Ansible module practice" dest=/tmp/ansible-practice/notes.txt mode=0640'
 
 # Read the file
-ansible web -m ansible.builtin.command -a 'cat /tmp/ansible-practice/notes.txt'
+sudo ansible web -m ansible.builtin.command -a 'cat /tmp/ansible-practice/notes.txt'
 
 # Install curl with the Amazon Linux 2023 package manager
-ansible web -m ansible.builtin.dnf -a 'name=curl state=present'
+sudo ansible web -m ansible.builtin.dnf -a 'name=curl state=present'
 
 # Gather service facts
-ansible web -m ansible.builtin.service_facts
+sudo ansible web -m ansible.builtin.service_facts
 
 # Display a value
-ansible web -m ansible.builtin.debug -a 'msg="Basic module practice complete"'
+sudo ansible web -m ansible.builtin.debug -a 'msg="Basic module practice complete"'
 ~~~
 
 Privilege escalation is enabled in the config for package installation and other privileged operations. Prefer purpose-built modules such as file, copy, and dnf; use command for simple commands. Use shell only when shell features such as pipes or redirects are required.
